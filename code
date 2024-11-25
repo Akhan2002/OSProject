@@ -1,0 +1,106 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <time.h>
+
+// Function to calculate CPU usage
+double get_cpu_usage() {
+    static unsigned long long prev_idle = 0, prev_total = 0;
+    unsigned long long idle, total, diff_idle, diff_total;
+    unsigned long long user, nice, system, idle_time, iowait, irq, softirq, steal;
+    char buffer[128];
+    FILE *fp = fopen("/proc/stat", "r");
+
+    if (fp == NULL) {
+        perror("Failed to read /proc/stat");
+        exit(EXIT_FAILURE);
+    }
+
+    fgets(buffer, sizeof(buffer), fp); // Read the first line
+    fclose(fp);
+
+    sscanf(buffer, "cpu %llu %llu %llu %llu %llu %llu %llu %llu",
+           &user, &nice, &system, &idle_time, &iowait, &irq, &softirq, &steal);
+
+    idle = idle_time + iowait;
+    total = user + nice + system + idle_time + iowait + irq + softirq + steal;
+
+    diff_idle = idle - prev_idle;
+    diff_total = total - prev_total;
+
+    prev_idle = idle;
+    prev_total = total;
+
+    return (double)(diff_total - diff_idle) / diff_total * 100.0;
+}
+
+// Function to fetch memory usage
+void get_memory_usage(double *used, double *total) {
+    unsigned long mem_total, mem_free, buffers, cached;
+    FILE *fp = fopen("/proc/meminfo", "r");
+    if (fp == NULL) {
+        perror("Failed to read /proc/meminfo");
+        exit(EXIT_FAILURE);
+    }
+
+    fscanf(fp, "MemTotal: %lu kB\n", &mem_total);
+    fscanf(fp, "MemFree: %lu kB\n", &mem_free);
+    fscanf(fp, "Buffers: %lu kB\n", &buffers);
+    fscanf(fp, "Cached: %lu kB\n", &cached);
+    fclose(fp);
+
+    *total = mem_total / 1024.0; // Convert to MB
+    *used = (mem_total - mem_free - buffers - cached) / 1024.0; // Convert to MB
+}
+
+// Function to fetch disk usage
+void get_disk_usage() {
+    char buffer[256], disk_name[32];
+    unsigned long reads, writes;
+    FILE *fp = fopen("/proc/diskstats", "r");
+
+    if (fp == NULL) {
+        perror("Failed to read /proc/diskstats");
+        exit(EXIT_FAILURE);
+    }
+
+    printf("\nDisk Usage:\n");
+    while (fgets(buffer, sizeof(buffer), fp) != NULL) {
+        sscanf(buffer, "%*d %*d %s %*d %*d %lu %*d %*d %*d %lu", disk_name, &reads, &writes);
+        if (strncmp(disk_name, "sd", 2) == 0) { // Filter for standard disks
+            printf("Disk: %s | Reads: %lu | Writes: %lu\n", disk_name, reads, writes);
+        }
+    }
+    fclose(fp);
+}
+
+int main() {
+    const int max_duration = 30; // Run for 30 seconds
+    time_t start_time = time(NULL); // Record the start time
+
+    printf("Starting System Resource Monitor...\n");
+
+    while (time(NULL) - start_time < max_duration) { // Check if max duration is reached
+        // Fetch CPU usage
+        double cpu_usage = get_cpu_usage();
+
+        // Fetch memory usage
+        double mem_used, mem_total;
+        get_memory_usage(&mem_used, &mem_total);
+
+        // Print system stats
+        printf("\n=== System Resource Monitor ===\n");
+        printf("CPU Usage: %.2f%%\n", cpu_usage);
+        printf("Memory Usage: Used: %.2f MB, Total: %.2f MB\n", mem_used, mem_total);
+
+        // Fetch disk usage
+        get_disk_usage();
+
+        // Refresh every second
+        sleep(1);
+    }
+
+    printf("\nSystem Resource Monitor has stopped after %d seconds.\n", max_duration);
+    return 0;
+}
