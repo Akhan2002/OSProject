@@ -76,7 +76,7 @@ void get_disk_usage() {
 }
 
 int main() {
-    const int max_duration = 30; // Run for 30 seconds
+    const int max_duration = 10; // Run for 10 seconds
     time_t start_time = time(NULL); // Record the start time
 
     printf("Starting System Resource Monitor...\n");
